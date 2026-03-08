@@ -1,0 +1,18 @@
+Another auth URL was generated but timed out. To deploy, please either:
+
+**Option A — Authorize via browser (fastest):**
+Run this in your terminal:
+```
+vercel login
+```
+Then visit the URL it shows, approve it, then run:
+```
+vercel --prod --yes
+```
+
+**Option B — Use a Vercel token:**
+1. Go to https://vercel.com/account/tokens
+2. Create a token
+3. Run: `vercel --prod --yes --token YOUR_TOKEN`
+
+Once you've logged in, just run `vercel --prod --yes` and it'll deploy automatically. The project is fully built, committed, and ready — Vercel just needs auth to proceed.
