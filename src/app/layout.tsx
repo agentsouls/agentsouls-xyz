@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
@@ -15,16 +16,18 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "agentsouls.xyz -- AI Agent Skills & Prompts for OpenClaw",
+  title: "AgentSouls — Private Beta",
   description:
-    "Production-tested AI agent skills, prompts, and agent teams. Free tools to start. Premium agents when you're ready.",
+    "AI agents built for crypto. On-chain analysis, DeFi yield, whale tracking, smart contract audits, and more.",
   openGraph: {
-    title: "agentsouls.xyz",
-    description: "AI Agent Skills & Prompts for OpenClaw",
+    title: "AgentSouls — Private Beta",
+    description: "AI agents built for crypto. Request early access.",
     url: "https://agentsouls.xyz",
   },
 };
 
+// BETA MODE: Header and Footer hidden during private beta gate.
+// To restore, re-add <Header /> and <Footer /> around {children}.
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -32,10 +35,21 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <link
+          href="https://assets.calendly.com/assets/external/widget.css"
+          rel="stylesheet"
+        />
+      </head>
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
-        <Header />
         <main>{children}</main>
-        <Footer />
+        <Script
+          src="https://assets.calendly.com/assets/external/widget.js"
+          strategy="lazyOnload"
+        />
+        <Script id="calendly-init" strategy="lazyOnload">
+          {`Calendly.initBadgeWidget({ url: 'https://calendly.com/clawbuilt-proton', text: 'Book a Call', color: '#0069ff', textColor: '#ffffff', branding: false });`}
+        </Script>
       </body>
     </html>
   );
