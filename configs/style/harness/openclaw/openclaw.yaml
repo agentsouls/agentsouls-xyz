@@ -1,0 +1,222 @@
+# ─────────────────────────────────────────────────────────────
+# StyleClaw — OpenClaw Configuration
+# Harness: OpenClaw (Social DM integration)
+# Primary use: Instagram DM automation for salons
+# ─────────────────────────────────────────────────────────────
+
+agent:
+  name: "StyleClaw-Social"
+  version: "1.0.0"
+  vertical: "style"
+  description: "Social media DM agent for salon client engagement"
+
+# ─────────────────────────────────────────────────────────────
+# LLM Configuration
+# ─────────────────────────────────────────────────────────────
+
+llm:
+  primary:
+    provider: "openrouter"
+    model: "anthropic/claude-haiku-4-5-20251001"
+    temperature: 0.5
+    max_tokens: 512       # DMs should be concise
+    top_p: 0.95
+
+  fallback:
+    provider: "openrouter"
+    model: "anthropic/claude-sonnet-4-20250514"
+    temperature: 0.4
+    max_tokens: 1024
+
+  routing_config: "./routing.yaml"
+
+# ─────────────────────────────────────────────────────────────
+# Instagram DM Channel
+# ─────────────────────────────────────────────────────────────
+
+channels:
+  instagram:
+    enabled: true
+
+    # Meta/Instagram Graph API credentials
+    credentials:
+      app_id: "${INSTAGRAM_APP_ID}"
+      app_secret: "${INSTAGRAM_APP_SECRET}"
+      page_access_token: "${INSTAGRAM_PAGE_ACCESS_TOKEN}"
+      instagram_business_account_id: "${INSTAGRAM_BUSINESS_ACCOUNT_ID}"
+
+    # Webhook for receiving DMs
+    webhook:
+      verify_token: "${INSTAGRAM_WEBHOOK_VERIFY_TOKEN}"
+      endpoint: "/webhooks/instagram"
+      # Subscribe to these webhook fields
+      subscribed_fields:
+        - "messages"
+        - "messaging_postbacks"
+
+    # DM behavior
+    behavior:
+      # Auto-reply to all DMs
+      auto_reply: true
+      # Delay before responding (feels more natural than instant)
+      reply_delay_seconds: 3
+      # Maximum messages per conversation before suggesting phone/email
+      max_dm_turns: 15
+      # Hours of operation — outside these hours, send away message
+      active_hours:
+        timezone: "${SALON_TIMEZONE:-America/Chicago}"
+        start: "08:00"
+        end: "21:00"
+      away_message: |
+        Thanks for reaching out! We're currently away but will get back to you during business hours. For immediate help, call us at ${SALON_PHONE} or book online at ${BOOKING_URL}
+
+    # Content handling
+    content:
+      # Handle image messages (client sending inspo photos)
+      accept_images: true
+      image_response: "Love this inspo! I'll note this for your stylist. When you book, mention you shared a reference photo in DMs and they'll pull it up."
+      # Do not process videos or voice messages
+      accept_video: false
+      accept_audio: false
+      unsupported_media_response: "I can only work with text and photos right now. Can you describe what you're looking for, or send a photo instead?"
+
+    # Story mention responses
+    story_mentions:
+      enabled: true
+      auto_reply: true
+      reply_template: "Thanks for the shoutout! We love seeing our work out in the world. Hope you're loving your look! 💇"
+
+    # Quick replies (Instagram-native buttons)
+    quick_replies:
+      enabled: true
+      default_options:
+        - title: "Book Now"
+          payload: "BOOK_NOW"
+        - title: "Services & Pricing"
+          payload: "VIEW_SERVICES"
+        - title: "Talk to a Human"
+          payload: "HUMAN_ESCALATION"
+
+  # Facebook Messenger (planned)
+  facebook_messenger:
+    enabled: false
+    note: "Coming soon — uses same Meta Graph API infrastructure"
+
+# ─────────────────────────────────────────────────────────────
+# Persona Overrides for Social DM
+# ─────────────────────────────────────────────────────────────
+
+persona:
+  # Inherit base persona from main config
+  inherit: "${PERSONA_PRESET}"
+
+  # Social-specific overrides
+  overrides:
+    # Slightly more casual on social media
+    formality_adjustment: -1
+    # Shorter responses for DM format
+    verbosity_adjustment: -1
+    # Emoji usage — appropriate for Instagram
+    emoji:
+      enabled: true
+      frequency: "light"   # "none", "light", "moderate"
+      # Only use these emoji categories
+      allowed_categories:
+        - "hair"           # 💇 💇‍♀️ 💇‍♂️
+        - "beauty"         # 💅 ✨ 💫
+        - "positive"       # 😊 🙌 ❤️
+        - "scheduling"     # 📅 ⏰
+      # Never use
+      blocked: ["🔥", "💀", "😂", "🤣"]
+
+# ─────────────────────────────────────────────────────────────
+# System Prompt Addendum for Social DM
+# ─────────────────────────────────────────────────────────────
+
+system_prompt:
+  base_template: "../skills/system_prompt.md"
+
+  social_addendum: |
+    SOCIAL DM CHANNEL OVERRIDES:
+    - You are responding via Instagram Direct Messages.
+    - Keep messages short — 1-3 sentences per message. Split longer info across multiple messages if needed.
+    - Light emoji use is appropriate for this channel. Match the client's energy.
+    - If a client sends an inspiration photo, acknowledge it enthusiastically and suggest they reference it when booking.
+    - When sharing the booking link, format it cleanly — Instagram makes URLs tappable.
+    - Never ask for sensitive info (phone, email, full name) over DMs. Redirect to booking link or phone.
+    - If the conversation goes past 10 messages without resolution, suggest continuing via phone or in person.
+    - Be aware that DM conversations may be screenshotted and shared. Never say anything you wouldn't want publicly visible.
+
+# ─────────────────────────────────────────────────────────────
+# Integrations
+# ─────────────────────────────────────────────────────────────
+
+integrations:
+  # Booking platform — read-only for service/availability info
+  booking_platform:
+    provider: "${BOOKING_PLATFORM}"
+    api_key: "${BOOKING_API_KEY}"
+    location_id: "${BOOKING_LOCATION_ID}"
+    permissions:
+      read_services: true
+      read_availability: true
+      read_appointments: false   # More restricted in social channels
+      write_appointments: false
+      write_clients: false
+
+  composio:
+    enabled: "${COMPOSIO_ENABLED:-true}"
+    api_key: "${COMPOSIO_API_KEY}"
+
+# ─────────────────────────────────────────────────────────────
+# Rate Limiting & Safety
+# ─────────────────────────────────────────────────────────────
+
+rate_limiting:
+  # Per-user limits (by Instagram user ID)
+  messages_per_minute: 10
+  messages_per_hour: 60
+  max_conversation_turns: 30
+
+  # Global limits (all users combined)
+  global_messages_per_minute: 100
+  global_messages_per_hour: 1000
+
+  # Spam detection
+  spam_detection:
+    enabled: true
+    # Block if same message sent 3+ times in a row
+    duplicate_threshold: 3
+    # Block if messages contain known spam patterns
+    block_patterns:
+      - "buy followers"
+      - "grow your account"
+      - "DM me for"
+      - "check my bio"
+
+# ─────────────────────────────────────────────────────────────
+# Logging
+# ─────────────────────────────────────────────────────────────
+
+logging:
+  level: "info"
+  format: "json"
+  conversation_log:
+    enabled: true
+    retention_days: 90
+    pii_masking: true
+    mask_fields:
+      - "instagram_user_id"
+      - "phone_number"
+      - "email"
+
+# ─────────────────────────────────────────────────────────────
+# Deployment
+# ─────────────────────────────────────────────────────────────
+
+deployment:
+  runtime: "docker"
+  port: 3200
+  health_endpoint: "/health"
+  # Requires public HTTPS endpoint for Instagram webhook verification
+  public_url: "${OPENCLAW_PUBLIC_URL}"

@@ -1,0 +1,132 @@
+# TradeClaw — OpenClaw Model Routing Configuration
+# Routes requests to different models based on task type and priority
+
+routing:
+  # Default model for general conversation
+  default:
+    provider: anthropic
+    model_id: anthropic/claude-sonnet-4-20250514
+    temperature: 0.2
+    max_tokens: 2048
+
+  # Route definitions — matched in order, first match wins
+  routes:
+    # Emergency classification — highest priority, lowest temperature
+    - name: emergency_classifier
+      match:
+        event_type: inbound_message
+        stage: classify
+      model:
+        provider: anthropic
+        model_id: anthropic/claude-sonnet-4-20250514
+        temperature: 0.1
+        max_tokens: 256
+      priority: critical
+      timeout_seconds: 5
+      # Emergency classification must be fast and deterministic.
+      # 5-second timeout — if it takes longer, something is wrong.
+
+    # Emergency response generation
+    - name: emergency_responder
+      match:
+        classification: emergency
+      model:
+        provider: anthropic
+        model_id: anthropic/claude-sonnet-4-20250514
+        temperature: 0.2
+        max_tokens: 512
+      priority: critical
+      timeout_seconds: 10
+
+    # Lead qualification (Google LSA, Thumbtack)
+    # Speed matters — first response wins the lead
+    - name: lead_qualifier
+      match:
+        event_type:
+          - google_lsa_lead
+          - thumbtack_lead
+      model:
+        provider: anthropic
+        model_id: anthropic/claude-sonnet-4-20250514
+        temperature: 0.2
+        max_tokens: 1024
+      priority: high
+      timeout_seconds: 10
+
+    # Quote building — needs knowledge retrieval
+    - name: quote_builder
+      match:
+        intent: quote_request
+      model:
+        provider: anthropic
+        model_id: anthropic/claude-sonnet-4-20250514
+        temperature: 0.2
+        max_tokens: 1024
+      priority: standard
+      timeout_seconds: 15
+
+    # Seasonal campaign generation
+    - name: campaign_generator
+      match:
+        event_type: cron_campaign
+      model:
+        provider: anthropic
+        model_id: anthropic/claude-sonnet-4-20250514
+        temperature: 0.4  # Slightly higher for varied campaign messaging
+        max_tokens: 512
+      priority: low
+      timeout_seconds: 30
+
+    # Review follow-up
+    - name: review_followup
+      match:
+        event_type: cron_review
+      model:
+        provider: anthropic
+        model_id: anthropic/claude-sonnet-4-20250514
+        temperature: 0.3
+        max_tokens: 256
+      priority: low
+      timeout_seconds: 15
+
+    # Complex conversations (long threads, commercial accounts)
+    - name: complex_conversation
+      match:
+        conversation_turns_gt: 10
+      model:
+        provider: anthropic
+        model_id: anthropic/claude-sonnet-4-20250514
+        temperature: 0.3
+        max_tokens: 2048
+      priority: standard
+      timeout_seconds: 20
+
+  # Fallback chain — if primary model fails
+  fallback:
+    - provider: anthropic
+      model_id: anthropic/claude-sonnet-4-20250514
+      temperature: 0.2
+      max_tokens: 2048
+    - provider: anthropic
+      model_id: anthropic/claude-haiku-4-20250514
+      temperature: 0.2
+      max_tokens: 1024
+      # Haiku as last resort — faster and cheaper but less capable.
+      # Acceptable for standard requests, NOT for emergency classification.
+      exclude_routes:
+        - emergency_classifier
+        - emergency_responder
+
+  # Cost controls
+  cost:
+    daily_budget_usd: 50.00
+    alert_threshold_percent: 80
+    emergency_override: true
+    # Emergency requests are never throttled by cost controls.
+    # Standard requests will queue if budget is exceeded.
+
+  # Latency targets
+  latency:
+    emergency_p99_ms: 3000
+    standard_p99_ms: 8000
+    campaign_p99_ms: 15000

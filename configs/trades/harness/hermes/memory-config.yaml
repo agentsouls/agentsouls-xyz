@@ -1,0 +1,131 @@
+# TradeClaw — Hermes Agent Memory Configuration
+# Retention policies tuned for trades service context
+
+memory:
+  provider: redis
+  connection:
+    host: "{{REDIS_HOST}}"
+    port: 6379
+    db: 0
+    password: "{{REDIS_PASSWORD}}"
+    tls: true
+
+  # Conversation memory — short-term context within a session
+  conversation:
+    enabled: true
+    max_turns: 50
+    ttl_hours: 24
+    # After 24 hours, conversation context expires.
+    # Trades calls rarely span multiple days except for follow-ups,
+    # which are handled by the CRM integration.
+
+  # Customer memory — cross-session recall
+  customer:
+    enabled: true
+    ttl_days: 365
+    max_entries_per_customer: 100
+    indexed_fields:
+      - customer_id
+      - phone_number
+      - email
+      - service_address_zip
+    stored_fields:
+      - name
+      - phone_number
+      - email
+      - service_address
+      - property_type
+      - equipment_notes
+      - service_history_summary
+      - maintenance_plan_status
+      - preferred_contact_method
+      - access_notes  # gate codes, pet info, etc.
+      - lead_source
+    # Customer memory allows the agent to recognize returning customers
+    # and reference past service: "I see we replaced your water heater
+    # last March — is this a related issue?"
+
+  # Emergency log — retained longer for compliance
+  emergency_log:
+    enabled: true
+    ttl_days: 730  # 2 years — regulatory and liability retention
+    stored_fields:
+      - timestamp
+      - customer_id
+      - classification
+      - classification_confidence
+      - issue_description
+      - escalation_target
+      - response_time_seconds
+      - resolution_status
+    # Emergency logs are critical for liability. If a customer claims
+    # an emergency was mishandled, this log is the record of truth.
+
+  # Service request memory — pending and recent requests
+  service_requests:
+    enabled: true
+    ttl_days: 90
+    stored_fields:
+      - request_id
+      - customer_id
+      - service_type
+      - description
+      - status  # pending, scheduled, completed, cancelled
+      - scheduled_date
+      - technician_assigned
+      - quote_range
+      - actual_price
+      - channel  # sms, phone, chat, lsa, thumbtack
+
+  # Seasonal campaign tracking — prevent duplicate sends
+  campaigns:
+    enabled: true
+    ttl_days: 180
+    stored_fields:
+      - campaign_id
+      - customer_id
+      - sent_at
+      - channel
+      - response  # yes, no, unsubscribe, no_response
+      - converted  # boolean
+
+  # Review request tracking
+  reviews:
+    enabled: true
+    ttl_days: 365
+    stored_fields:
+      - customer_id
+      - service_request_id
+      - sent_at
+      - platform  # google, yelp, facebook
+      - response  # positive, negative, no_response
+      - review_posted  # boolean
+
+# Vector store for knowledge retrieval
+vector_store:
+  provider: qdrant
+  collection: tradeclaw_knowledge
+  connection:
+    host: "{{QDRANT_HOST}}"
+    port: 6333
+    api_key: "{{QDRANT_API_KEY}}"
+  embedding:
+    model: text-embedding-3-small
+    dimensions: 1536
+  search:
+    top_k: 5
+    score_threshold: 0.7
+    # Service area lookups need high precision
+    # Pricing lookups need moderate precision
+    # General FAQ can be lower threshold
+
+# Cleanup and maintenance
+maintenance:
+  # Run cleanup daily at 3am
+  cleanup_schedule: "0 3 * * *"
+  # Archive expired records before deletion
+  archive_before_delete: true
+  archive_destination: s3://{{S3_BUCKET}}/tradeclaw/archive/
+  # Metrics
+  report_memory_usage: true
+  report_schedule: "0 6 * * 1"  # Weekly on Monday at 6am

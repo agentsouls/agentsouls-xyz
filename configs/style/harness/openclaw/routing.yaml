@@ -1,0 +1,206 @@
+# ─────────────────────────────────────────────────────────────
+# StyleClaw — OpenClaw Model Routing Configuration
+# ─────────────────────────────────────────────────────────────
+# Routes requests to the optimal model based on intent,
+# complexity, and cost targets. Designed for social DM channels.
+# ─────────────────────────────────────────────────────────────
+
+routing:
+  default_model: "anthropic/claude-haiku-4-5-20251001"
+  default_provider: "openrouter"
+
+  # ─────────────────────────────────────────────────────────
+  # Intent-Based Routing
+  # ─────────────────────────────────────────────────────────
+  # Classifier runs on Haiku to determine intent, then routes
+  # to the appropriate model for response generation.
+
+  intent_classifier:
+    model: "anthropic/claude-haiku-4-5-20251001"
+    provider: "openrouter"
+    temperature: 0.1     # Low temp for consistent classification
+    max_tokens: 64       # Classification only — minimal tokens
+
+    # Intent taxonomy for salon interactions
+    intents:
+      - id: "greeting"
+        description: "Client says hello, asks how the agent is, general opener"
+        route_to: "haiku"
+        priority: 1
+
+      - id: "service_inquiry"
+        description: "Asks about a specific service, what's available, service descriptions"
+        route_to: "haiku"
+        priority: 1
+
+      - id: "pricing"
+        description: "Asks how much something costs, price range, deals"
+        route_to: "haiku"
+        priority: 1
+
+      - id: "booking_request"
+        description: "Wants to book, schedule, reserve, make an appointment"
+        route_to: "haiku"
+        priority: 1
+
+      - id: "stylist_inquiry"
+        description: "Asks about a specific stylist, who to see, stylist recommendations"
+        route_to: "haiku"
+        priority: 1
+
+      - id: "product_inquiry"
+        description: "Asks about products, product recommendations, what brands are carried"
+        route_to: "haiku"
+        priority: 2
+
+      - id: "product_recommendation"
+        description: "Needs personalized product recommendation based on hair/skin type, concerns, goals"
+        route_to: "sonnet"
+        priority: 2
+
+      - id: "waitlist"
+        description: "Wants to be added to waitlist, cancellation list, notified of openings"
+        route_to: "haiku"
+        priority: 2
+
+      - id: "policy_question"
+        description: "Asks about cancellation policy, late policy, payment methods"
+        route_to: "haiku"
+        priority: 1
+
+      - id: "location_parking"
+        description: "Asks about location, directions, parking, accessibility"
+        route_to: "haiku"
+        priority: 1
+
+      - id: "hours"
+        description: "Asks about business hours, holiday hours, when they're open"
+        route_to: "haiku"
+        priority: 1
+
+      - id: "complaint"
+        description: "Unhappy client, bad experience, wants to complain, demands resolution"
+        route_to: "sonnet"
+        priority: 3
+
+      - id: "complex_consultation"
+        description: "Multi-factor decision: comparing services, transformation planning, color correction questions"
+        route_to: "sonnet"
+        priority: 3
+
+      - id: "aftercare"
+        description: "Post-service care questions, maintenance tips, follow-up timing"
+        route_to: "haiku"
+        priority: 2
+
+      - id: "promotion"
+        description: "Asks about deals, specials, discounts, referral programs"
+        route_to: "haiku"
+        priority: 1
+
+      - id: "escalation_request"
+        description: "Wants to talk to a real person, manager, owner"
+        route_to: "sonnet"
+        priority: 3
+
+      - id: "off_topic"
+        description: "Not related to salon services, random question, trolling"
+        route_to: "haiku"
+        priority: 1
+
+      - id: "unknown"
+        description: "Cannot determine intent"
+        route_to: "haiku"
+        priority: 2
+
+  # ─────────────────────────────────────────────────────────
+  # Model Definitions
+  # ─────────────────────────────────────────────────────────
+
+  models:
+    haiku:
+      provider: "openrouter"
+      model: "anthropic/claude-haiku-4-5-20251001"
+      temperature: 0.5
+      max_tokens: 512
+      top_p: 0.95
+      cost_per_1k_input: 0.001
+      cost_per_1k_output: 0.005
+      avg_latency_ms: 400
+      use_cases:
+        - "Simple Q&A (pricing, hours, location)"
+        - "Service menu lookup"
+        - "Booking redirects"
+        - "Greetings and closings"
+        - "Policy questions"
+        - "Off-topic deflection"
+
+    sonnet:
+      provider: "openrouter"
+      model: "anthropic/claude-sonnet-4-20250514"
+      temperature: 0.4
+      max_tokens: 1024
+      top_p: 0.9
+      cost_per_1k_input: 0.003
+      cost_per_1k_output: 0.015
+      avg_latency_ms: 800
+      use_cases:
+        - "Complaint handling (empathy + de-escalation)"
+        - "Personalized product recommendations"
+        - "Complex service consultations"
+        - "Escalation management"
+        - "Multi-step decision support"
+
+  # ─────────────────────────────────────────────────────────
+  # Fallback & Retry Logic
+  # ─────────────────────────────────────────────────────────
+
+  fallback:
+    # If primary model fails, try fallback
+    haiku_fallback: "sonnet"
+    sonnet_fallback: "haiku"    # Degrade gracefully
+
+    # Retry configuration
+    retry:
+      max_retries: 2
+      retry_delay_ms: 500
+      # On final failure, send a graceful error message
+      final_fallback_message: "I'm having a bit of trouble right now. Can you try again in a moment, or reach us at ${SALON_PHONE}?"
+
+  # ─────────────────────────────────────────────────────────
+  # Sentiment-Based Escalation
+  # ─────────────────────────────────────────────────────────
+
+  sentiment:
+    enabled: true
+    # If sentiment is negative, route to Sonnet regardless of intent
+    negative_sentiment_override: "sonnet"
+    # Sentiment thresholds (0 = very negative, 1 = very positive)
+    escalation_threshold: 0.3
+
+  # ─────────────────────────────────────────────────────────
+  # Cost Controls
+  # ─────────────────────────────────────────────────────────
+
+  cost_controls:
+    # Daily budget cap (USD)
+    daily_budget_usd: "${DAILY_LLM_BUDGET:-5.00}"
+    # When budget is 80% consumed, force all requests to Haiku
+    budget_warning_threshold: 0.8
+    budget_warning_action: "force_haiku"
+    # When budget is 100% consumed, send static responses only
+    budget_exceeded_action: "static_only"
+    budget_exceeded_message: "Thanks for reaching out! For the fastest help, call us at ${SALON_PHONE} or book at ${BOOKING_URL}"
+
+  # ─────────────────────────────────────────────────────────
+  # Analytics
+  # ─────────────────────────────────────────────────────────
+
+  analytics:
+    track_routing_decisions: true
+    track_model_costs: true
+    track_latency: true
+    # Log intent classification for tuning
+    log_intents: true
+    export_format: "json"
+    export_interval_hours: 24

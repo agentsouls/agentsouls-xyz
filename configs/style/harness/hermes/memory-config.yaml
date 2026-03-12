@@ -1,0 +1,193 @@
+# ─────────────────────────────────────────────────────────────
+# StyleClaw — Memory Configuration (Hermes Agent)
+# ─────────────────────────────────────────────────────────────
+# Manages conversation context, client interaction history,
+# and session persistence for salon/barbershop deployments.
+# ─────────────────────────────────────────────────────────────
+
+memory:
+  # ───────────────────────────────────────────────────────────
+  # Conversation Memory — Active Session
+  # ───────────────────────────────────────────────────────────
+  conversation:
+    # Maximum turns to keep in active context window
+    max_turns: 30
+
+    # Context window management
+    context_window:
+      # Max tokens sent to LLM per request (prompt + history)
+      max_tokens: 4096
+      # Strategy when context exceeds limit
+      overflow_strategy: "sliding_window"
+      # Keep the system prompt + last N turns
+      sliding_window_keep_last: 15
+      # Always retain the first turn (client's initial question)
+      pin_first_turn: true
+
+    # Session timeout — conversation resets after inactivity
+    session_timeout_minutes: 30
+
+    # Auto-summarize long conversations
+    summarization:
+      enabled: true
+      # Trigger summarization when turns exceed this count
+      trigger_at_turns: 20
+      # Use a compact summary to preserve context
+      summary_max_tokens: 256
+      model: "anthropic/claude-haiku-4-5-20251001"
+
+  # ───────────────────────────────────────────────────────────
+  # Client Interaction History — Cross-Session
+  # ───────────────────────────────────────────────────────────
+  client_history:
+    enabled: true
+
+    # How clients are identified across sessions
+    identification:
+      # Match by channel-specific ID (phone for SMS, IG handle for DM, etc.)
+      primary_key: "channel_user_id"
+      # Optional: match by phone number across channels
+      cross_channel_matching: false  # Requires Pro tier
+
+    # What to remember about returning clients
+    retained_fields:
+      - field: "first_name"
+        retention: "indefinite"
+        source: "conversation_extraction"
+
+      - field: "preferred_stylist"
+        retention: "indefinite"
+        source: "conversation_extraction"
+
+      - field: "last_service"
+        retention: "180_days"
+        source: "booking_integration"
+
+      - field: "last_visit_date"
+        retention: "180_days"
+        source: "booking_integration"
+
+      - field: "service_preferences"
+        retention: "180_days"
+        description: "e.g., 'prefers balayage', 'sensitive scalp', 'always adds toner'"
+        source: "conversation_extraction"
+
+      - field: "product_preferences"
+        retention: "180_days"
+        source: "conversation_extraction"
+
+      - field: "communication_preference"
+        retention: "indefinite"
+        description: "e.g., 'prefers text over call', 'likes detailed explanations'"
+        source: "conversation_extraction"
+
+    # Returning client greeting behavior
+    returning_client:
+      enabled: true
+      # Reference their name and last service if available
+      use_in_greeting: true
+      # Example: "Welcome back, Sarah! Last time you were in for a balayage with Kim. How can I help today?"
+      max_history_references: 2  # Don't overwhelm with "I remember everything"
+
+  # ───────────────────────────────────────────────────────────
+  # Waitlist Memory
+  # ───────────────────────────────────────────────────────────
+  waitlist:
+    enabled: true
+    storage: "persistent"
+    retention_days: 30
+    fields:
+      - "client_name"
+      - "phone_number"
+      - "preferred_date"
+      - "preferred_time_window"
+      - "preferred_stylist"
+      - "service_requested"
+      - "created_at"
+    # Notify salon staff via webhook when waitlist entry is added
+    notify_on_add:
+      enabled: true
+      webhook_url: "${WAITLIST_WEBHOOK_URL}"
+      # Or send SMS to salon phone
+      sms_fallback: "${SALON_PHONE}"
+
+  # ───────────────────────────────────────────────────────────
+  # Storage Backend
+  # ───────────────────────────────────────────────────────────
+  storage:
+    # Options: "sqlite" (Starter), "redis" (Pro), "postgres" (Agency)
+    backend: "${MEMORY_BACKEND:-sqlite}"
+
+    sqlite:
+      path: "/data/memory/styleclaw.db"
+      wal_mode: true
+
+    redis:
+      url: "${REDIS_URL}"
+      prefix: "styleclaw:"
+      # TTL matches the longest retention period
+      default_ttl_days: 180
+
+    postgres:
+      connection_string: "${DATABASE_URL}"
+      schema: "styleclaw"
+      pool_size: 5
+
+  # ───────────────────────────────────────────────────────────
+  # Data Retention & Privacy
+  # ───────────────────────────────────────────────────────────
+  retention:
+    # Conversation transcripts
+    conversation_logs:
+      retention_days: 90
+      auto_purge: true
+      purge_schedule: "0 3 * * 0"  # Weekly at 3am Sunday
+
+    # Client interaction history
+    client_profiles:
+      retention_days: 180
+      # Allow clients to request deletion
+      deletion_on_request: true
+      # Grace period before permanent deletion
+      deletion_grace_days: 7
+
+    # Waitlist entries
+    waitlist_entries:
+      retention_days: 30
+      auto_purge: true
+
+    # Analytics / aggregated data (non-PII)
+    analytics:
+      retention_days: 365
+      anonymize: true
+
+  # ───────────────────────────────────────────────────────────
+  # PII Handling
+  # ───────────────────────────────────────────────────────────
+  pii:
+    # Mask PII in stored conversation logs
+    mask_in_logs: true
+    fields_to_mask:
+      - "phone_number"
+      - "email"
+      - "full_name"     # First names are kept; full names masked
+      - "address"
+      - "credit_card"   # Should never appear, but safety net
+
+    # Encryption at rest
+    encryption:
+      enabled: true
+      algorithm: "AES-256-GCM"
+      key_source: "${ENCRYPTION_KEY}"
+
+  # ───────────────────────────────────────────────────────────
+  # Knowledge Base Cache
+  # ───────────────────────────────────────────────────────────
+  knowledge_cache:
+    enabled: true
+    # Cache parsed knowledge files to avoid re-reading on every request
+    ttl_minutes: 60
+    # Invalidate cache when knowledge files are updated
+    watch_for_changes: true
+    watched_paths:
+      - "/data/knowledge/*.md"

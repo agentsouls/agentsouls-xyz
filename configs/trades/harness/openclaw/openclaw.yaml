@@ -1,0 +1,228 @@
+# TradeClaw — OpenClaw Configuration
+# OpenClaw harness for deep integration deployments
+# Best for: ServiceTitan webhook-heavy setups, multi-platform lead routing
+
+agent:
+  name: TradeClaw
+  version: 1.0.0
+  vertical: trades
+  harness: openclaw
+  description: >
+    OpenClaw deployment for trades businesses requiring deep two-way integrations
+    with field service management platforms (ServiceTitan, Housecall Pro),
+    lead platforms (Google LSA, Thumbtack), and custom webhook pipelines.
+
+# Model configuration — delegated to routing.yaml for multi-model setups
+model:
+  default: anthropic/claude-sonnet-4-20250514
+  routing_config: harness/openclaw/routing.yaml
+
+# System prompt
+prompts:
+  system_prompt: skills/system_prompt.md
+  persona: skills/persona.md
+
+# OpenClaw-specific: webhook pipeline configuration
+webhooks:
+  # Inbound webhook receivers
+  inbound:
+    servicetitan_job_update:
+      path: /webhooks/servicetitan/job
+      method: POST
+      auth: hmac_sha256
+      secret_env: SERVICETITAN_WEBHOOK_SECRET
+      handler: handlers.servicetitan.job_update
+      description: >
+        Receives job status updates from ServiceTitan.
+        Triggers review request on job completion.
+        Triggers follow-up on job cancellation.
+
+    servicetitan_customer:
+      path: /webhooks/servicetitan/customer
+      method: POST
+      auth: hmac_sha256
+      secret_env: SERVICETITAN_WEBHOOK_SECRET
+      handler: handlers.servicetitan.customer_sync
+      description: >
+        Syncs customer records from ServiceTitan to agent memory.
+
+    housecall_pro_job:
+      path: /webhooks/housecallpro/job
+      method: POST
+      auth: bearer_token
+      secret_env: HOUSECALL_PRO_WEBHOOK_TOKEN
+      handler: handlers.housecall_pro.job_update
+
+    google_lsa_lead:
+      path: /webhooks/google-lsa/lead
+      method: POST
+      auth: google_oauth
+      handler: handlers.google_lsa.new_lead
+      response_sla_seconds: 300
+      description: >
+        Google LSA leads must be responded to within 5 minutes
+        for optimal ranking. Handler immediately classifies
+        emergency vs standard and responds.
+
+    thumbtack_lead:
+      path: /webhooks/thumbtack/lead
+      method: POST
+      auth: bearer_token
+      secret_env: THUMBTACK_WEBHOOK_TOKEN
+      handler: handlers.thumbtack.new_lead
+      response_sla_seconds: 300
+
+    twilio_sms:
+      path: /webhooks/twilio/sms
+      method: POST
+      auth: twilio_signature
+      handler: handlers.twilio.sms_inbound
+
+    twilio_voice:
+      path: /webhooks/twilio/voice
+      method: POST
+      auth: twilio_signature
+      handler: handlers.twilio.voice_inbound
+
+    chat_widget:
+      path: /webhooks/chat
+      method: WebSocket
+      auth: api_key
+      handler: handlers.chat.websocket
+
+  # Outbound webhook senders
+  outbound:
+    servicetitan_create_job:
+      endpoint: "{{SERVICETITAN_API_URL}}/jobs"
+      method: POST
+      auth: oauth2
+      oauth_config:
+        token_url: "{{SERVICETITAN_TOKEN_URL}}"
+        client_id_env: SERVICETITAN_CLIENT_ID
+        client_secret_env: SERVICETITAN_CLIENT_SECRET
+      retry:
+        max_attempts: 3
+        backoff_seconds: [1, 5, 15]
+
+    servicetitan_customer_lookup:
+      endpoint: "{{SERVICETITAN_API_URL}}/customers"
+      method: GET
+      auth: oauth2
+
+    housecall_pro_create_job:
+      endpoint: https://api.housecallpro.com/v1/jobs
+      method: POST
+      auth: bearer_token
+      secret_env: HOUSECALL_PRO_API_KEY
+
+    twilio_send_sms:
+      endpoint: https://api.twilio.com/2010-04-01/Accounts/{{TWILIO_ACCOUNT_SID}}/Messages.json
+      method: POST
+      auth: basic
+      username_env: TWILIO_ACCOUNT_SID
+      password_env: TWILIO_AUTH_TOKEN
+
+    escalation_alert:
+      endpoint: "{{ESCALATION_WEBHOOK_URL}}"
+      method: POST
+      auth: bearer_token
+      secret_env: ESCALATION_API_KEY
+      retry:
+        max_attempts: 5
+        backoff_seconds: [1, 2, 5, 10, 30]
+      # Emergency escalation retries aggressively — this is life-safety
+
+# Event pipeline — processes webhooks through the agent
+pipeline:
+  # Step 1: Authenticate and validate
+  - stage: auth
+    handler: middleware.auth
+
+  # Step 2: Classify event type
+  - stage: classify
+    handler: middleware.event_classifier
+    config:
+      emergency_check: true  # Always run emergency check on inbound events
+
+  # Step 3: Route to appropriate handler
+  - stage: route
+    handler: middleware.router
+    config:
+      emergency_route: handlers.emergency
+      standard_route: handlers.standard
+      integration_route: handlers.integration
+
+  # Step 4: Execute handler and generate response
+  - stage: execute
+    timeout_seconds: 30
+
+  # Step 5: Log and persist
+  - stage: persist
+    handler: middleware.persistence
+
+# Knowledge base
+knowledge:
+  base_path: knowledge/scaffold/
+  vector_store:
+    provider: qdrant
+    collection: tradeclaw_knowledge
+  embedding_model: text-embedding-3-small
+
+# Memory — same as Hermes config
+memory:
+  config_path: harness/hermes/memory-config.yaml
+
+# Cron jobs
+cron_jobs:
+  enabled: true
+  config:
+    seasonal_campaigns:
+      spring: "0 9 1 3,4,5 *"
+      fall: "0 9 1 9,10,11 *"
+    review_followup: "0 10 * * *"
+    maintenance_renewals: "0 9 1 * *"
+    servicetitan_sync: "*/15 * * * *"  # Sync every 15 minutes
+
+# Observability
+observability:
+  log_level: info
+  log_format: json
+  structured_events: true
+  metrics:
+    provider: prometheus
+    port: 9090
+  tracing:
+    provider: opentelemetry
+    endpoint: "{{OTEL_ENDPOINT}}"
+    sample_rate: 0.1
+  alerts:
+    emergency_failure:
+      condition: "emergency_handler.error_count > 0"
+      severity: critical
+      channel: pagerduty
+    webhook_delivery_failure:
+      condition: "outbound_webhook.failure_rate > 0.05"
+      severity: high
+      channel: slack
+    lead_response_sla:
+      condition: "lead_response_time > 300s"
+      severity: high
+      channel: slack
+
+# Security
+security:
+  tls: required
+  cors:
+    allowed_origins:
+      - "{{CLIENT_WEBSITE_URL}}"
+      - "https://cdn.clawbuilt.ai"
+  rate_limiting:
+    per_ip:
+      max_requests: 100
+      window_seconds: 60
+    per_webhook:
+      max_requests: 50
+      window_seconds: 60
+  input_validation:
+    max_body_size: 1mb
+    sanitize_html: true

@@ -1,0 +1,237 @@
+# TradeClaw — Hermes Agent Configuration
+# Default harness for trades vertical deployments
+# Emergency classification accuracy is the top priority
+
+agent:
+  name: TradeClaw
+  version: 1.0.0
+  vertical: trades
+  description: >
+    AI dispatcher for HVAC, plumbing, electrical, and trades service businesses.
+    Handles emergency classification, quote capture, scheduling, and maintenance upsells.
+
+# Model Configuration
+# Using claude-sonnet for reliable emergency classification
+# Low temperature ensures consistent, deterministic routing decisions
+model:
+  provider: anthropic
+  model_id: anthropic/claude-sonnet-4-20250514
+  temperature: 0.2
+  max_tokens: 2048
+  top_p: 0.9
+  # Emergency classification requires high precision — do not raise temperature
+  # above 0.3 or you risk inconsistent emergency detection
+
+# System prompt sourced from skills directory
+prompts:
+  system_prompt: skills/system_prompt.md
+  persona: skills/persona.md
+
+# Knowledge base — populated per-client
+knowledge:
+  base_path: knowledge/scaffold/
+  documents:
+    - services.md
+    - service-area.md
+    - pricing.md
+    - maintenance-plans.md
+    - warranty-info.md
+    - emergency-protocols.md
+  embedding_model: text-embedding-3-small
+  chunk_size: 512
+  chunk_overlap: 64
+
+# Sandbox configuration
+sandbox:
+  runtime: docker
+  image: clawbuilt/tradeclaw:1.0.0
+  memory_limit: 512m
+  cpu_limit: "0.5"
+  timeout_seconds: 30
+  network_mode: bridge
+  read_only_rootfs: true
+  no_new_privileges: true
+
+# Subagent delegation — critical for emergency vs standard routing
+subagents:
+  enabled: true
+
+  emergency_classifier:
+    description: >
+      First-pass classifier that runs on every inbound message.
+      Determines EMERGENCY vs STANDARD routing.
+    model_id: anthropic/claude-sonnet-4-20250514
+    temperature: 0.1  # Very low — we want deterministic classification
+    max_tokens: 256
+    system_prompt: |
+      You are an emergency classifier for a {{TRADE_TYPE}} service company.
+      Analyze the customer message and classify as EMERGENCY or STANDARD.
+
+      EMERGENCY triggers (any match = EMERGENCY):
+      - Gas smell/leak
+      - Carbon monoxide alarm/symptoms
+      - Flooding/burst pipe/uncontrolled water
+      - No heat in freezing conditions (<40°F)
+      - No AC in extreme heat (>95°F) with vulnerable occupants
+      - Sewer backup
+      - Electrical fire/sparking/burning smell
+      - Safety fear expressed
+      - Vulnerable occupants at risk
+
+      Respond with JSON only:
+      {"classification": "EMERGENCY" | "STANDARD", "reason": "brief explanation", "confidence": 0.0-1.0}
+
+      When in doubt, classify as EMERGENCY. False positives are acceptable. False negatives are not.
+    output_format: json
+
+  quote_builder:
+    description: >
+      Assembles pricing range responses from knowledge base.
+      Only invoked for standard quote requests.
+    model_id: anthropic/claude-sonnet-4-20250514
+    temperature: 0.2
+    max_tokens: 1024
+    tools:
+      - knowledge_lookup
+
+  scheduler:
+    description: >
+      Handles appointment scheduling logic.
+      Checks service area, availability, and confirms bookings.
+    model_id: anthropic/claude-sonnet-4-20250514
+    temperature: 0.2
+    max_tokens: 1024
+    tools:
+      - calendar_check
+      - service_area_lookup
+      - booking_create
+
+# Routing logic
+routing:
+  # Every inbound message hits the emergency classifier first
+  inbound_pipeline:
+    - step: classify
+      agent: emergency_classifier
+      on_emergency:
+        - action: escalate
+          channel: "{{EMERGENCY_ESCALATION_CHANNEL}}"
+          notify:
+            - on_call_tech
+            - office_manager
+          sla_minutes: "{{EMERGENCY_CALLBACK_SLA}}"
+        - action: respond
+          template: emergency_acknowledgment
+      on_standard:
+        - action: route_to_main_agent
+
+  # After-hours routing
+  after_hours:
+    emergency: route_to_on_call  # Emergencies always get routed
+    standard: capture_and_queue   # Standard requests queued for next business day
+
+# Cron jobs — seasonal campaigns and follow-ups
+cron_jobs:
+  enabled: true
+
+  seasonal_ac_campaign:
+    schedule: "0 9 1 3,4,5 *"  # March 1, April 1, May 1 at 9am
+    action: trigger_campaign
+    campaign: spring_ac_tuneup
+    target_segment: residential_customers
+    channel: sms
+    template: |
+      Hi {{CUSTOMER_NAME}}, it's {{COMPANY_NAME}}. Spring is here — time for your AC tune-up!
+      Our spring special is ${{SPRING_SPECIAL_PRICE}}. Reply YES to schedule or call us at {{COMPANY_PHONE}}.
+
+  seasonal_furnace_campaign:
+    schedule: "0 9 1 9,10,11 *"  # Sept 1, Oct 1, Nov 1 at 9am
+    action: trigger_campaign
+    campaign: fall_furnace_checkup
+    target_segment: residential_customers
+    channel: sms
+    template: |
+      Hi {{CUSTOMER_NAME}}, it's {{COMPANY_NAME}}. Cold weather is coming — schedule your furnace safety check!
+      Fall special: ${{FALL_SPECIAL_PRICE}}. Reply YES to schedule or call {{COMPANY_PHONE}}.
+
+  review_followup:
+    schedule: "0 10 * * *"  # Daily at 10am
+    action: send_review_requests
+    delay_after_service_hours: 2
+    channel: sms
+    template: |
+      Hi {{CUSTOMER_NAME}}, thanks for choosing {{COMPANY_NAME}}!
+      If you had a great experience, a quick review helps us a lot: {{REVIEW_LINK}}
+
+  maintenance_plan_renewal:
+    schedule: "0 9 1 * *"  # First of each month at 9am
+    action: check_renewals
+    advance_notice_days: 30
+    channel: sms
+
+# Channel configuration
+channels:
+  sms:
+    provider: twilio
+    webhook_path: /webhooks/twilio/sms
+    max_message_length: 1600
+  voice:
+    provider: twilio
+    webhook_path: /webhooks/twilio/voice
+    asr_provider: deepgram
+    tts_provider: elevenlabs
+    voice_id: "{{VOICE_ID}}"
+  web_chat:
+    widget: clawbuilt-chat
+    webhook_path: /webhooks/chat
+  google_lsa:
+    webhook_path: /webhooks/google-lsa
+    auto_respond: true
+    response_sla_seconds: 300
+  thumbtack:
+    webhook_path: /webhooks/thumbtack
+    auto_respond: true
+    response_sla_seconds: 300
+
+# Integration hooks
+integrations:
+  servicetitan:
+    enabled: "{{SERVICETITAN_ENABLED}}"
+    config_path: integrations/servicetitan.md
+  housecall_pro:
+    enabled: "{{HOUSECALL_PRO_ENABLED}}"
+    config_path: integrations/housecall-pro.md
+  google_lsa:
+    enabled: "{{GOOGLE_LSA_ENABLED}}"
+    config_path: integrations/google-lsa.md
+  thumbtack:
+    enabled: "{{THUMBTACK_ENABLED}}"
+    config_path: integrations/thumbtack.md
+
+# Logging and monitoring
+observability:
+  log_level: info
+  log_format: json
+  metrics:
+    enabled: true
+    provider: prometheus
+    port: 9090
+  alerts:
+    emergency_classification_failure:
+      condition: "emergency_classifier.error_rate > 0.01"
+      channel: pagerduty
+    response_latency:
+      condition: "p99_latency > 5000ms"
+      channel: slack
+    missed_emergency:
+      condition: "reclassified_to_emergency > 0"
+      channel: pagerduty
+      severity: critical
+
+# Rate limiting
+rate_limiting:
+  per_phone_number:
+    max_requests: 20
+    window_seconds: 3600
+  global:
+    max_requests: 1000
+    window_seconds: 60

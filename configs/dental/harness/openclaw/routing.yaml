@@ -1,0 +1,192 @@
+# =============================================================================
+# DentalClaw — OpenClaw Model Routing Configuration
+# Optimizes cost and performance by routing queries to appropriate models
+# =============================================================================
+
+routing:
+  enabled: true
+  strategy: "classifier"    # classifier, round_robin, or manual
+
+  # ---------------------------------------------------------------------------
+  # Model Tiers
+  # ---------------------------------------------------------------------------
+  tiers:
+    # Tier 1: Fast & cheap — simple queries, greetings, FAQs
+    fast:
+      model_id: "${OPENCLAW_FAST_MODEL:-meta-llama/Llama-3.1-8B-Instruct}"
+      api_base: "${OPENCLAW_API_BASE:-http://localhost:8000/v1}"
+      max_tokens: 512
+      temperature: 0.3
+      timeout_ms: 5000
+      cost_weight: 1.0       # Relative cost (baseline)
+
+    # Tier 2: Balanced — scheduling flows, insurance questions, multi-turn
+    balanced:
+      model_id: "${OPENCLAW_MODEL:-meta-llama/Llama-3.3-70B-Instruct}"
+      api_base: "${OPENCLAW_API_BASE:-http://localhost:8000/v1}"
+      max_tokens: 1024
+      temperature: 0.3
+      timeout_ms: 15000
+      cost_weight: 4.0       # ~4x cost of fast tier
+
+    # Tier 3: Premium — complex conversations, escalation decisions, edge cases
+    premium:
+      model_id: "${OPENCLAW_PREMIUM_MODEL:-meta-llama/Llama-3.3-70B-Instruct}"
+      api_base: "${OPENCLAW_API_BASE:-http://localhost:8000/v1}"
+      max_tokens: 1536
+      temperature: 0.2
+      timeout_ms: 30000
+      cost_weight: 4.0
+
+    # Optional: Cloud fallback when local GPU is saturated
+    cloud_fallback:
+      enabled: false
+      provider: anthropic
+      model_id: "claude-haiku-4-20250414"
+      api_key: "${ANTHROPIC_API_KEY}"
+      max_tokens: 1024
+      temperature: 0.3
+      timeout_ms: 10000
+      cost_weight: 2.0
+      # Only used when local models are unavailable or queue depth exceeds threshold
+      trigger:
+        queue_depth: 10
+        latency_p95_ms: 20000
+
+  # ---------------------------------------------------------------------------
+  # Classification Rules
+  # ---------------------------------------------------------------------------
+  # The router classifies each inbound message and routes to the appropriate tier.
+  # Classification is done by keyword matching + conversation state analysis.
+  # ---------------------------------------------------------------------------
+  classifier:
+    # Default tier when no rule matches
+    default_tier: balanced
+
+    rules:
+      # --- Route to FAST tier ---
+      - name: greetings
+        tier: fast
+        patterns:
+          - "^(hi|hello|hey|good morning|good afternoon|good evening)\\b"
+          - "^(thanks|thank you|bye|goodbye|have a good|take care)"
+          - "^(yes|no|yep|nope|ok|okay|sure|got it)$"
+        conditions: []
+
+      - name: simple_faq
+        tier: fast
+        patterns:
+          - "(?i)(what are your|what're your|when are you|when do you) (hours|open)"
+          - "(?i)(where are you|where is the|what is the address|directions)"
+          - "(?i)(phone number|contact|email|fax)"
+          - "(?i)(do you accept|do you take) (walk-?ins|new patients)"
+          - "(?i)(parking|wheelchair|accessible|handicap)"
+        conditions: []
+
+      - name: office_info
+        tier: fast
+        patterns:
+          - "(?i)(covid|mask|safety|protocol)"
+          - "(?i)(what to (bring|expect)|first visit|new patient)"
+        conditions: []
+
+      # --- Route to BALANCED tier ---
+      - name: scheduling
+        tier: balanced
+        patterns:
+          - "(?i)(schedule|book|appointment|available|opening|slot)"
+          - "(?i)(reschedule|cancel|change|move) (my|an|the) (appointment)"
+          - "(?i)(next available|soonest|earliest|this week|tomorrow)"
+        conditions: []
+
+      - name: insurance
+        tier: balanced
+        patterns:
+          - "(?i)(insurance|coverage|plan|provider|network|accept|take)"
+          - "(?i)(delta dental|cigna|aetna|metlife|united|guardian|humana)"
+          - "(?i)(co-?pay|deductible|out of pocket|pre-?auth)"
+        conditions: []
+
+      - name: services
+        tier: balanced
+        patterns:
+          - "(?i)(cleaning|exam|x-?ray|filling|crown|root canal|extraction)"
+          - "(?i)(whitening|veneer|implant|invisalign|braces|orthodon)"
+          - "(?i)(how (long|much)|what does .* (cost|take|involve))"
+        conditions: []
+
+      - name: multi_turn
+        tier: balanced
+        conditions:
+          - type: conversation_turns
+            min: 4
+
+      # --- Route to PREMIUM tier ---
+      - name: complex_conversation
+        tier: premium
+        conditions:
+          - type: conversation_turns
+            min: 8
+
+      - name: escalation_risk
+        tier: premium
+        patterns:
+          - "(?i)(emergency|urgent|severe|bleeding|swollen|pain)"
+          - "(?i)(complaint|unhappy|dissatisfied|frustrated|angry|terrible)"
+          - "(?i)(speak to|talk to|transfer|manager|supervisor|dentist)"
+          - "(?i)(malpractice|lawsuit|lawyer|attorney|legal)"
+          - "(?i)(hipaa|privacy|records|breach|data)"
+        conditions: []
+
+      - name: clinical_redirect
+        tier: premium
+        patterns:
+          - "(?i)(diagnosis|treatment plan|prognosis|medication|prescri)"
+          - "(?i)(should I|do I need|is it (normal|serious|bad))"
+          - "(?i)(second opinion|another dentist|specialist|referral)"
+        conditions: []
+
+  # ---------------------------------------------------------------------------
+  # Performance Targets
+  # ---------------------------------------------------------------------------
+  performance:
+    # Target latencies (time to first token)
+    latency_targets:
+      fast:     { p50_ms: 200,  p95_ms: 1000,  p99_ms: 3000 }
+      balanced: { p50_ms: 500,  p95_ms: 3000,  p99_ms: 8000 }
+      premium:  { p50_ms: 800,  p95_ms: 5000,  p99_ms: 15000 }
+
+    # If a tier exceeds its p99 target, fall back to the next tier
+    auto_fallback:
+      enabled: true
+      order: [fast, balanced, premium, cloud_fallback]
+
+    # Request queuing
+    queue:
+      max_depth: 50
+      timeout_ms: 30000
+      priority:
+        emergency: 1      # Highest priority
+        scheduling: 2
+        general: 3
+
+  # ---------------------------------------------------------------------------
+  # Cost Tracking
+  # ---------------------------------------------------------------------------
+  cost:
+    tracking:
+      enabled: true
+      log_path: "/data/dentalclaw/cost.log"
+
+    # Monthly budget cap (for cloud fallback only; local inference is fixed cost)
+    budget:
+      cloud_monthly_limit_usd: 50.00
+      alert_threshold_pct: 80
+      alert_email: "${OFFICE_EMAIL}"
+
+    # Cost reporting
+    reporting:
+      enabled: true
+      interval: daily
+      format: json
+      output_path: "/data/dentalclaw/reports/"

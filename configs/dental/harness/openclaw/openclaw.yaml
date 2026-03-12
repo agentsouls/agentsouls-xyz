@@ -1,0 +1,207 @@
+# =============================================================================
+# DentalClaw — OpenClaw Configuration
+# Harness: OpenClaw (open-weight models, self-hosted)
+# Version: 1.0.0
+# =============================================================================
+
+agent:
+  name: DentalClaw
+  version: "1.0.0"
+  harness: openclaw
+  description: "HIPAA-aware dental office AI agent on open-weight models"
+  skill_path: "../../skills"
+  knowledge_path: "../../knowledge/scaffold"
+
+# -----------------------------------------------------------------------------
+# Model Configuration
+# -----------------------------------------------------------------------------
+model:
+  # Primary model — served via vLLM, Ollama, or compatible OpenAI API endpoint
+  primary:
+    provider: openai_compatible
+    api_base: "${OPENCLAW_API_BASE:-http://localhost:8000/v1}"
+    api_key: "${OPENCLAW_API_KEY:-not-needed}"
+    model_id: "${OPENCLAW_MODEL:-meta-llama/Llama-3.3-70B-Instruct}"
+    temperature: 0.3
+    max_tokens: 1024
+    top_p: 0.9
+    context_window: 8192
+
+  # Fallback model — smaller, faster
+  fallback:
+    provider: openai_compatible
+    api_base: "${OPENCLAW_API_BASE:-http://localhost:8000/v1}"
+    api_key: "${OPENCLAW_API_KEY:-not-needed}"
+    model_id: "${OPENCLAW_FALLBACK_MODEL:-meta-llama/Llama-3.1-8B-Instruct}"
+    temperature: 0.3
+    max_tokens: 512
+    context_window: 8192
+
+  # Routing configuration — see routing.yaml for details
+  routing:
+    enabled: true
+    config_path: "./routing.yaml"
+
+# -----------------------------------------------------------------------------
+# Inference Server
+# -----------------------------------------------------------------------------
+inference:
+  # vLLM configuration (default)
+  engine: vllm
+  vllm:
+    tensor_parallel_size: 1
+    gpu_memory_utilization: 0.85
+    max_model_len: 8192
+    quantization: "${OPENCLAW_QUANTIZATION:-awq}"    # awq, gptq, or null
+    dtype: "float16"
+    enforce_eager: false
+    swap_space: 4    # GB
+
+  # Alternative: Ollama
+  # engine: ollama
+  # ollama:
+  #   host: "http://localhost:11434"
+  #   model: "llama3.3:70b-instruct-q4_K_M"
+
+# -----------------------------------------------------------------------------
+# System Prompt
+# -----------------------------------------------------------------------------
+prompt:
+  system_prompt_path: "../../skills/system_prompt.md"
+  persona_path: "../../skills/persona.md"
+  knowledge_base_path: "../../knowledge/scaffold"
+
+  # Prompt assembly
+  assembly:
+    order:
+      - system_prompt
+      - persona
+      - knowledge_base
+      - conversation_history
+      - tool_definitions
+
+    # Token budget management
+    budget:
+      system_prompt: 3500
+      persona: 600
+      knowledge_base: 3000
+      conversation_history: 2000
+      tool_definitions: 800
+      response_reserve: 1024
+
+    # When total exceeds context window, trim these first
+    trim_priority:
+      - conversation_history
+      - knowledge_base
+      - persona
+
+# -----------------------------------------------------------------------------
+# Gateway
+# -----------------------------------------------------------------------------
+gateway:
+  web_chat:
+    enabled: true
+    port: 8080
+    cors_origins:
+      - "${PRACTICE_WEBSITE}"
+    rate_limit:
+      requests_per_minute: 30
+
+  sms:
+    enabled: false
+    provider: twilio
+
+  voice:
+    enabled: false
+    provider: twilio
+
+# -----------------------------------------------------------------------------
+# Tools
+# -----------------------------------------------------------------------------
+tools:
+  calendar:
+    enabled: true
+    provider: "${CALENDAR_PROVIDER:-google_calendar}"
+    mode: "read_only"
+
+  message_capture:
+    enabled: true
+    delivery:
+      method: email
+      recipients:
+        - "${OFFICE_EMAIL}"
+
+  reviews:
+    enabled: false
+    provider: birdeye
+
+# -----------------------------------------------------------------------------
+# Memory
+# -----------------------------------------------------------------------------
+memory:
+  backend: sqlite
+  db_path: "/data/dentalclaw/memory.db"
+  conversation:
+    max_turns: 30
+    session_ttl_hours: 12
+  user_model:
+    enabled: true
+    retention_days: 180
+
+# -----------------------------------------------------------------------------
+# Security
+# -----------------------------------------------------------------------------
+security:
+  sandbox:
+    enabled: true
+    read_only_rootfs: true
+    no_new_privileges: true
+    capabilities_drop: [ALL]
+    capabilities_add: [NET_BIND_SERVICE]
+    pids_limit: 100
+    memory_limit: "1g"      # Higher for local inference
+    gpu_passthrough: true    # Required for GPU inference
+
+  phi_filter:
+    enabled: true
+    mode: strict
+
+  input:
+    max_message_length: 2000
+    block_patterns:
+      - "(?i)ignore.*previous.*instructions"
+      - "(?i)system.*prompt"
+      - "(?i)you.*are.*now"
+
+  audit:
+    enabled: true
+    log_path: "/data/dentalclaw/audit.log"
+
+# -----------------------------------------------------------------------------
+# Scheduling
+# -----------------------------------------------------------------------------
+scheduling:
+  timezone: "${PRACTICE_TIMEZONE:-America/New_York}"
+  office_hours:
+    monday:    { open: "08:00", close: "17:00" }
+    tuesday:   { open: "08:00", close: "17:00" }
+    wednesday: { open: "08:00", close: "17:00" }
+    thursday:  { open: "08:00", close: "17:00" }
+    friday:    { open: "08:00", close: "14:00" }
+    saturday:  closed
+    sunday:    closed
+  after_hours:
+    behavior: message_capture
+    emergency_number: "${EMERGENCY_PHONE_NUMBER}"
+
+# -----------------------------------------------------------------------------
+# Observability
+# -----------------------------------------------------------------------------
+observability:
+  health_check:
+    enabled: true
+    port: 8081
+  metrics:
+    enabled: true
+    provider: prometheus
+    port: 9090

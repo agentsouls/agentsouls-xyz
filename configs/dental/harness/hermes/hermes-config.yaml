@@ -1,0 +1,311 @@
+# =============================================================================
+# DentalClaw — Hermes Agent Configuration
+# Harness: Hermes Agent (default)
+# Version: 1.0.0
+# =============================================================================
+
+agent:
+  name: DentalClaw
+  version: "1.0.0"
+  description: "HIPAA-aware dental office front desk AI agent"
+  skill_path: "../../skills"
+  knowledge_path: "../../knowledge/scaffold"
+
+# -----------------------------------------------------------------------------
+# Model Configuration
+# -----------------------------------------------------------------------------
+model:
+  provider: anthropic
+  model_id: anthropic/claude-sonnet-4-20250514
+  temperature: 0.3
+  max_tokens: 1024
+  top_p: 0.9
+  stop_sequences: []
+  # Fallback model if primary is unavailable
+  fallback:
+    provider: anthropic
+    model_id: anthropic/claude-haiku-4-20250414
+    temperature: 0.3
+    max_tokens: 1024
+
+# -----------------------------------------------------------------------------
+# Memory Configuration
+# -----------------------------------------------------------------------------
+memory:
+  config_path: "./memory-config.yaml"
+  backend: sqlite
+  db_path: "/data/dentalclaw/memory.db"
+  # Conversation memory
+  conversation:
+    max_turns: 50
+    summary_after: 20
+    ttl_hours: 24
+  # Patient context (non-PHI only: name, phone, preferences)
+  user_context:
+    enabled: true
+    fields_allowed:
+      - first_name
+      - last_name
+      - phone_number
+      - preferred_contact_method
+      - preferred_day
+      - preferred_time
+      - insurance_plan_name
+      - appointment_type
+    fields_blocked:
+      - diagnosis
+      - treatment_plan
+      - medication
+      - medical_history
+      - ssn
+      - date_of_birth
+      - account_balance
+
+# -----------------------------------------------------------------------------
+# Gateway / Channel Configuration
+# -----------------------------------------------------------------------------
+gateway:
+  # Web chat widget
+  web_chat:
+    enabled: true
+    port: 8080
+    cors_origins:
+      - "${PRACTICE_WEBSITE}"
+    rate_limit:
+      requests_per_minute: 30
+      burst: 10
+    widget:
+      position: "bottom-right"
+      greeting: "Hello! How can we help you today?"
+      placeholder: "Type your message..."
+      theme:
+        primary_color: "${WIDGET_PRIMARY_COLOR:-#2563EB}"
+        font_family: "system-ui, sans-serif"
+
+  # Twilio voice
+  voice:
+    enabled: false
+    provider: twilio
+    phone_number: "${TWILIO_PHONE_NUMBER}"
+    webhook_path: "/voice/inbound"
+    voice_settings:
+      language: "en-US"
+      voice: "Polly.Joanna"
+      speech_timeout: 3
+      barge_in: true
+
+  # SMS
+  sms:
+    enabled: false
+    provider: twilio
+    phone_number: "${TWILIO_PHONE_NUMBER}"
+    webhook_path: "/sms/inbound"
+    max_message_length: 160
+    opt_out_keywords: ["STOP", "UNSUBSCRIBE", "CANCEL"]
+
+  # Facebook Messenger
+  messenger:
+    enabled: false
+    page_access_token: "${FB_PAGE_ACCESS_TOKEN}"
+    verify_token: "${FB_VERIFY_TOKEN}"
+    webhook_path: "/messenger/webhook"
+
+# -----------------------------------------------------------------------------
+# Tools & Integrations
+# -----------------------------------------------------------------------------
+tools:
+  # Calendar — read-only by default
+  calendar:
+    enabled: true
+    provider: "${CALENDAR_PROVIDER:-dentrix}"
+    mode: "read_only"
+    # Set to "read_write" to enable direct booking
+    # mode: "read_write"
+    providers:
+      dentrix:
+        api_url: "${DENTRIX_API_URL}"
+        api_key: "${DENTRIX_API_KEY}"
+        location_id: "${DENTRIX_LOCATION_ID}"
+      nexhealth:
+        api_url: "https://nexhealth.info/api/v1"
+        api_key: "${NEXHEALTH_API_KEY}"
+        subdomain: "${NEXHEALTH_SUBDOMAIN}"
+        location_id: "${NEXHEALTH_LOCATION_ID}"
+      google_calendar:
+        credentials_path: "/secrets/google-calendar-credentials.json"
+        calendar_id: "${GOOGLE_CALENDAR_ID}"
+        scopes:
+          - "https://www.googleapis.com/auth/calendar.readonly"
+
+  # Review platform
+  reviews:
+    enabled: false
+    provider: birdeye
+    api_key: "${BIRDEYE_API_KEY}"
+    business_id: "${BIRDEYE_BUSINESS_ID}"
+    review_link: "${REVIEW_LINK}"
+
+  # Message capture (after-hours)
+  message_capture:
+    enabled: true
+    delivery:
+      method: email
+      recipients:
+        - "${OFFICE_EMAIL}"
+      # Alternative: webhook
+      # method: webhook
+      # url: "${MESSAGE_WEBHOOK_URL}"
+    fields:
+      - name
+      - phone
+      - reason
+      - urgency
+      - preferred_callback_time
+
+  # Recall system
+  recall:
+    enabled: false
+    trigger: webhook
+    webhook_path: "/recall/trigger"
+    templates_path: "../../skills/system_prompt.md#recall"
+
+# -----------------------------------------------------------------------------
+# Security
+# -----------------------------------------------------------------------------
+security:
+  # Docker sandbox
+  sandbox:
+    enabled: true
+    runtime: docker
+    image: "clawbuilt/dentalclaw:1.0.0"
+    read_only_rootfs: true
+    no_new_privileges: true
+    capabilities_drop:
+      - ALL
+    capabilities_add:
+      - NET_BIND_SERVICE
+    pids_limit: 100
+    memory_limit: "512m"
+    cpu_limit: "1.0"
+    tmpfs:
+      - "/tmp:rw,noexec,nosuid,size=64m"
+    volumes:
+      - "/data/dentalclaw:/data/dentalclaw:rw"
+      - "/secrets:/secrets:ro"
+    network:
+      mode: bridge
+      allowed_hosts:
+        - "api.anthropic.com"
+        - "nexhealth.info"
+        - "api.birdeye.com"
+        - "${DENTRIX_API_HOST}"
+        - "${EAGLESOFT_API_HOST}"
+      blocked_ports:
+        - 22
+        - 3306
+        - 5432
+
+  # API authentication
+  api_auth:
+    enabled: true
+    method: bearer_token
+    token_env: "CLAWBUILT_API_KEY"
+
+  # Rate limiting
+  rate_limit:
+    enabled: true
+    global:
+      requests_per_minute: 60
+      burst: 20
+    per_ip:
+      requests_per_minute: 20
+      burst: 5
+
+  # Input validation
+  input:
+    max_message_length: 2000
+    strip_html: true
+    block_patterns:
+      - "(?i)ignore.*previous.*instructions"
+      - "(?i)system.*prompt"
+      - "(?i)you.*are.*now"
+      - "(?i)pretend.*you.*are"
+      - "(?i)jailbreak"
+
+  # Audit logging
+  audit:
+    enabled: true
+    log_path: "/data/dentalclaw/audit.log"
+    log_level: "INFO"
+    include:
+      - conversations
+      - tool_calls
+      - escalations
+      - errors
+    exclude:
+      - phi_fields
+    rotation:
+      max_size_mb: 100
+      max_files: 30
+      compress: true
+
+  # PHI protection
+  phi_filter:
+    enabled: true
+    mode: strict
+    actions:
+      - detect
+      - redact_from_logs
+      - block_from_memory
+    patterns:
+      - ssn
+      - date_of_birth
+      - medical_record_number
+      - diagnosis_codes
+      - medication_names
+
+# -----------------------------------------------------------------------------
+# Scheduling & Office Hours
+# -----------------------------------------------------------------------------
+scheduling:
+  timezone: "${PRACTICE_TIMEZONE:-America/New_York}"
+  office_hours:
+    monday:    { open: "08:00", close: "17:00" }
+    tuesday:   { open: "08:00", close: "17:00" }
+    wednesday: { open: "08:00", close: "17:00" }
+    thursday:  { open: "08:00", close: "17:00" }
+    friday:    { open: "08:00", close: "14:00" }
+    saturday:  { open: "closed", close: "closed" }
+    sunday:    { open: "closed", close: "closed" }
+  holidays: []
+  # Override hours for specific dates
+  # holidays:
+  #   - date: "2026-12-25"
+  #     label: "Christmas Day"
+  #     closed: true
+  #   - date: "2026-11-26"
+  #     label: "Thanksgiving"
+  #     closed: true
+
+  after_hours:
+    behavior: "message_capture"
+    emergency_number: "${EMERGENCY_PHONE_NUMBER}"
+    greeting: "Thank you for calling [Practice Name]. Our office is currently closed."
+
+# -----------------------------------------------------------------------------
+# Observability
+# -----------------------------------------------------------------------------
+observability:
+  health_check:
+    enabled: true
+    path: "/health"
+    port: 8081
+  metrics:
+    enabled: true
+    provider: prometheus
+    path: "/metrics"
+    port: 9090
+  tracing:
+    enabled: false
+    provider: opentelemetry
+    endpoint: "${OTEL_ENDPOINT}"

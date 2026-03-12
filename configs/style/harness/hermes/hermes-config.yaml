@@ -1,0 +1,266 @@
+# ─────────────────────────────────────────────────────────────
+# StyleClaw — Hermes Agent Configuration
+# Harness: Hermes Agent (Docker sandbox)
+# Vertical: Salon / Barbershop
+# ─────────────────────────────────────────────────────────────
+
+agent:
+  name: "StyleClaw"
+  version: "1.0.0"
+  vertical: "style"
+  description: "AI assistant for salon and barbershop client engagement"
+
+# ─────────────────────────────────────────────────────────────
+# LLM Configuration
+# ─────────────────────────────────────────────────────────────
+
+llm:
+  # Primary model — cost-effective for salon queries (booking, pricing, FAQs)
+  primary:
+    provider: "openrouter"
+    model: "anthropic/claude-haiku-4-5-20251001"
+    temperature: 0.5
+    max_tokens: 1024
+    top_p: 0.95
+    # Estimated cost: ~$0.001 per average salon interaction
+    # Haiku handles 95%+ of salon queries with excellent quality
+
+  # Fallback model — for complex queries requiring deeper reasoning
+  fallback:
+    provider: "openrouter"
+    model: "anthropic/claude-sonnet-4-20250514"
+    temperature: 0.4
+    max_tokens: 2048
+    top_p: 0.9
+    # Triggers: multi-step product recommendations, nuanced complaints,
+    # complex service comparisons, or when Haiku confidence is low
+
+  # Routing rules — when to escalate from primary to fallback
+  routing:
+    escalate_on:
+      - token_count_exceeds: 800          # Long conversations may need more context
+      - sentiment: "negative"             # Complaints get better model
+      - intent: "complex_recommendation"  # Multi-factor product/service matching
+      - retry_count: 1                    # If Haiku gives a poor response, retry with Sonnet
+    default: "primary"
+
+# ─────────────────────────────────────────────────────────────
+# Sandbox Configuration
+# ─────────────────────────────────────────────────────────────
+
+sandbox:
+  runtime: "docker"
+  image: "clawbuilt/hermes-base:latest"
+  resources:
+    memory: "512Mi"
+    cpu: "0.5"
+  network:
+    # Allowlist — only these domains are reachable from sandbox
+    egress_allowlist:
+      - "api.openrouter.ai"
+      - "api.anthropic.com"
+      - "api.vagaro.com"
+      - "connect.squareup.com"
+      - "api.booksy.com"
+      - "api.joinblvd.com"
+      - "api.composio.dev"
+      - "api.twilio.com"
+      - "graph.instagram.com"
+    egress_deny_all_others: true
+  volumes:
+    - name: "knowledge"
+      mount: "/data/knowledge"
+      read_only: true
+    - name: "logs"
+      mount: "/data/logs"
+      read_only: false
+
+# ─────────────────────────────────────────────────────────────
+# System Prompt
+# ─────────────────────────────────────────────────────────────
+
+system_prompt:
+  # Path to system prompt template — placeholders resolved at boot
+  template: "../skills/system_prompt.md"
+
+  # Knowledge base files injected into context
+  knowledge_files:
+    - path: "/data/knowledge/services.md"
+      label: "SERVICE_MENU"
+    - path: "/data/knowledge/team.md"
+      label: "TEAM_BIOS"
+    - path: "/data/knowledge/policies.md"
+      label: "POLICIES"
+    - path: "/data/knowledge/products.md"
+      label: "PRODUCT_CATALOG"
+    - path: "/data/knowledge/parking-access.md"
+      label: "PARKING_ACCESS"
+
+# ─────────────────────────────────────────────────────────────
+# Persona Configuration
+# ─────────────────────────────────────────────────────────────
+
+persona:
+  # Options: "luxury_salon_concierge", "neighborhood_barbershop_host", "custom"
+  preset: "luxury_salon_concierge"
+
+  calibration:
+    formality: 4
+    warmth: 4
+    verbosity: 3
+    playfulness: 2
+
+  # Only used if preset is "custom"
+  custom_instructions: ""
+
+# ─────────────────────────────────────────────────────────────
+# Channel Configuration
+# ─────────────────────────────────────────────────────────────
+
+channels:
+  web_chat:
+    enabled: true
+    widget:
+      position: "bottom-right"
+      primary_color: "${WIDGET_PRIMARY_COLOR:-#2D2D2D}"
+      greeting: "Hi! Welcome to ${SALON_NAME}. How can I help you today?"
+      placeholder: "Ask about services, pricing, or booking..."
+      avatar: "${AGENT_AVATAR_URL}"
+    max_message_length: 2000
+
+  sms:
+    enabled: "${SMS_ENABLED:-false}"
+    provider: "twilio"
+    phone_number: "${TWILIO_PHONE_NUMBER}"
+    max_message_length: 320
+    # Auto-adjust persona: reduce verbosity by 1 for SMS
+    persona_overrides:
+      verbosity: -1
+
+  instagram_dm:
+    enabled: false
+    # Instagram DM is handled by OpenClaw harness — see openclaw config
+    note: "Use OpenClaw harness for Instagram DM. See harness/openclaw/"
+
+# ─────────────────────────────────────────────────────────────
+# Cron Jobs — Appointment Reminders & Automated Messages
+# ─────────────────────────────────────────────────────────────
+
+cron_jobs:
+  enabled: "${CRON_ENABLED:-true}"
+
+  appointment_reminders:
+    enabled: true
+    # Reminder intervals before appointment time
+    intervals:
+      - hours_before: 24
+        channel: "sms"
+        template: |
+          Hi {{client_name}}! Just a friendly reminder — you have a {{service}} appointment with {{stylist}} tomorrow at {{time}}.
+
+          {{SALON_NAME}} | {{salon_address}}
+
+          Need to reschedule? {{BOOKING_URL}} or call {{SALON_PHONE}}
+
+      - hours_before: 2
+        channel: "sms"
+        template: |
+          See you soon, {{client_name}}! Your {{service}} with {{stylist}} is in 2 hours ({{time}}).
+
+          {{parking_info_short}}
+
+    # Source of appointment data
+    data_source: "${BOOKING_PLATFORM}"  # vagaro, square, booksy, or boulevard
+    poll_interval_minutes: 15
+
+  # Weekly engagement — optional
+  weekly_digest:
+    enabled: false
+    day: "monday"
+    time: "09:00"
+    timezone: "${SALON_TIMEZONE:-America/Chicago}"
+    channel: "sms"
+    # Only send to clients who have opted in
+    opt_in_required: true
+
+  # Review request — sent after appointment
+  post_visit_review:
+    enabled: "${REVIEW_NUDGE_ENABLED:-false}"
+    delay_hours: 4
+    channel: "sms"
+    template: |
+      Hi {{client_name}}! Hope you love your new look from {{stylist}}. If you have a moment, we'd really appreciate a review: {{REVIEW_URL}}
+
+      Thanks for choosing {{SALON_NAME}}!
+    max_sends_per_client: 1  # Don't spam — one review ask per client per 90 days
+    cooldown_days: 90
+
+# ─────────────────────────────────────────────────────────────
+# Integrations
+# ─────────────────────────────────────────────────────────────
+
+integrations:
+  booking_platform:
+    provider: "${BOOKING_PLATFORM}"  # vagaro | square | booksy | boulevard
+    api_key: "${BOOKING_API_KEY}"
+    location_id: "${BOOKING_LOCATION_ID}"
+    # Read-only by default — agent cannot create/modify bookings
+    permissions:
+      read_services: true
+      read_availability: true
+      read_appointments: true
+      write_appointments: false
+      write_clients: false
+
+  composio:
+    enabled: "${COMPOSIO_ENABLED:-true}"
+    api_key: "${COMPOSIO_API_KEY}"
+    # OAuth connections managed via Composio dashboard
+    connections:
+      - name: "booking_platform"
+        app: "${BOOKING_PLATFORM}"
+      - name: "google_business"
+        app: "google_business_profile"
+
+  twilio:
+    enabled: "${SMS_ENABLED:-false}"
+    account_sid: "${TWILIO_ACCOUNT_SID}"
+    auth_token: "${TWILIO_AUTH_TOKEN}"
+    phone_number: "${TWILIO_PHONE_NUMBER}"
+
+# ─────────────────────────────────────────────────────────────
+# Memory — Reference to memory config
+# ─────────────────────────────────────────────────────────────
+
+memory:
+  config_file: "./memory-config.yaml"
+
+# ─────────────────────────────────────────────────────────────
+# Logging & Observability
+# ─────────────────────────────────────────────────────────────
+
+logging:
+  level: "info"
+  format: "json"
+  destination: "${LOG_DESTINATION:-stdout}"
+  # Conversation logs for quality review
+  conversation_log:
+    enabled: true
+    retention_days: 90
+    pii_masking: true
+    mask_fields:
+      - "phone_number"
+      - "email"
+      - "last_name"
+
+# ─────────────────────────────────────────────────────────────
+# Rate Limiting & Abuse Prevention
+# ─────────────────────────────────────────────────────────────
+
+rate_limiting:
+  requests_per_minute: 30
+  requests_per_hour: 300
+  max_conversation_turns: 50
+  max_message_length: 2000
+  # Block repeated identical messages (spam protection)
+  dedup_window_seconds: 5

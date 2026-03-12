@@ -1,0 +1,191 @@
+# =============================================================================
+# DentalClaw — Hermes Agent Memory Configuration
+# =============================================================================
+
+# How often (in seconds) the agent reviews and consolidates memory
+nudge_interval: 300
+
+# Automatically create skills from repeated conversation patterns
+skill_creation: auto
+
+# Build lightweight user models (non-PHI only) for personalization
+user_modeling: true
+
+# -----------------------------------------------------------------------------
+# Conversation Memory
+# -----------------------------------------------------------------------------
+conversation:
+  # Maximum conversation turns held in active context
+  max_active_turns: 50
+
+  # After this many turns, summarize older turns to save context window
+  summarize_after: 20
+
+  # Summary model (use a fast model for cost efficiency)
+  summary_model: anthropic/claude-haiku-4-20250414
+
+  # Time-to-live for conversation sessions (hours)
+  session_ttl_hours: 24
+
+  # Grace period after last message before session expires (minutes)
+  idle_timeout_minutes: 30
+
+# -----------------------------------------------------------------------------
+# User Modeling
+# -----------------------------------------------------------------------------
+user_model:
+  enabled: true
+
+  # Fields the agent MAY remember across sessions
+  allowed_fields:
+    - first_name
+    - last_name
+    - phone_number
+    - email
+    - preferred_contact_method    # phone, text, email
+    - preferred_day_of_week
+    - preferred_time_of_day       # morning, afternoon, evening
+    - insurance_plan_name         # plan name only, not member ID
+    - appointment_history_summary # "Last visit: cleaning, Jan 2026"
+    - communication_preferences   # e.g., "prefers text reminders"
+    - language_preference         # e.g., "Spanish"
+
+  # Fields the agent MUST NEVER store — hard block
+  blocked_fields:
+    - ssn
+    - date_of_birth
+    - medical_record_number
+    - diagnosis
+    - treatment_plan
+    - medications
+    - medical_history
+    - dental_history
+    - lab_results
+    - xray_findings
+    - account_balance
+    - payment_history
+    - credit_card_number
+    - bank_account
+    - drivers_license
+
+  # How long user models persist (days). 0 = indefinite.
+  retention_days: 365
+
+  # Maximum number of user models to retain
+  max_users: 10000
+
+  # Automatically merge duplicate user models (matched by phone or email)
+  dedup:
+    enabled: true
+    match_fields: [phone_number, email]
+
+# -----------------------------------------------------------------------------
+# Skill Memory (Auto-Created Skills)
+# -----------------------------------------------------------------------------
+skill_memory:
+  # When skill_creation is "auto", the agent detects repeated patterns and
+  # creates reusable micro-skills (e.g., "insurance verification flow")
+  enabled: true
+
+  # Minimum times a pattern must repeat before becoming a skill
+  min_occurrences: 5
+
+  # Maximum number of auto-created skills
+  max_skills: 50
+
+  # Review period: auto-skills are flagged for human review after creation
+  review_required: true
+  review_webhook: "${SKILL_REVIEW_WEBHOOK}"
+
+# -----------------------------------------------------------------------------
+# Knowledge Base Memory
+# -----------------------------------------------------------------------------
+knowledge:
+  # Path to knowledge scaffold files
+  scaffold_path: "../../knowledge/scaffold"
+
+  # Re-index knowledge base on startup
+  reindex_on_start: true
+
+  # Embedding model for semantic search over knowledge base
+  embedding_model: "text-embedding-3-small"
+
+  # Chunk size for knowledge indexing (tokens)
+  chunk_size: 512
+  chunk_overlap: 64
+
+  # Maximum knowledge results returned per query
+  max_results: 5
+
+  # Similarity threshold (0-1). Below this, results are discarded.
+  similarity_threshold: 0.72
+
+# -----------------------------------------------------------------------------
+# Retention & Cleanup
+# -----------------------------------------------------------------------------
+retention:
+  # Conversation logs
+  conversations:
+    retain_days: 90
+    archive: true
+    archive_path: "/data/dentalclaw/archive/conversations"
+
+  # Audit logs
+  audit_logs:
+    retain_days: 365
+    archive: true
+    archive_path: "/data/dentalclaw/archive/audit"
+
+  # After-hours messages
+  captured_messages:
+    retain_days: 30
+    archive: false
+
+  # Cleanup job schedule (cron format)
+  cleanup_schedule: "0 3 * * 0"   # Every Sunday at 3 AM
+
+# -----------------------------------------------------------------------------
+# Storage Backend
+# -----------------------------------------------------------------------------
+storage:
+  backend: sqlite
+  sqlite:
+    db_path: "/data/dentalclaw/memory.db"
+    wal_mode: true
+    busy_timeout_ms: 5000
+
+  # Alternative: PostgreSQL (for multi-instance deployments)
+  # backend: postgres
+  # postgres:
+  #   host: "${POSTGRES_HOST}"
+  #   port: 5432
+  #   database: "dentalclaw"
+  #   user: "${POSTGRES_USER}"
+  #   password: "${POSTGRES_PASSWORD}"
+  #   ssl_mode: require
+  #   pool_size: 5
+
+# -----------------------------------------------------------------------------
+# Privacy & Compliance
+# -----------------------------------------------------------------------------
+privacy:
+  # Scrub PHI patterns from all memory stores
+  phi_scrub:
+    enabled: true
+    on_write: true
+    on_read: false    # Performance: scrub on write is sufficient
+
+  # Patient right to deletion
+  deletion_api:
+    enabled: true
+    endpoint: "/api/v1/memory/delete"
+    auth_required: true
+    # Deletes all user model data, conversation history, and captured messages
+    # for a given patient identifier (phone or email)
+
+  # Data export (for patient data requests)
+  export_api:
+    enabled: true
+    endpoint: "/api/v1/memory/export"
+    auth_required: true
+    format: json
