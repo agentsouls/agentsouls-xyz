@@ -255,6 +255,20 @@ export const products: Product[] = [
     new: true,
   },
   {
+    slug: "gpt-oauth-refresh",
+    name: "GPT OAuth Refresh Skill",
+    type: "skill",
+    category: "productivity",
+    description:
+      "Keep your OpenAI Codex token alive automatically. Step-by-step instructions for any OpenClaw agent to refresh the openai-codex OAuth token via browser before it expires. Includes failure modes, cron config, and the window.open intercept trick that makes it fully hands-free.",
+    price: 0,
+    downloads: 0,
+    github: "https://github.com/agentsouls/gpt-oauth-refresh",
+    tags: ["openai", "oauth", "openclaw", "skill", "free", "automation"],
+    featured: true,
+    new: true,
+  },
+  {
     slug: "the-crypto-team",
     name: "The Crypto Team",
     type: "team",
