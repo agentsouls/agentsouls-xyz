@@ -4,12 +4,12 @@ import Link from "next/link";
 export const metadata: Metadata = {
   title: "About -- agentsouls.xyz",
   description:
-    "agentsouls.xyz is a marketplace for production-ready OpenClaw skills and agents.",
+    "agentsouls.xyz sells outcome-driven AI tools, bundles, and operator workflows for traders, builders, and researchers.",
 };
 
 export default function AboutPage() {
   return (
-    <div style={{ maxWidth: "640px", margin: "0 auto", padding: "80px 24px" }}>
+    <div style={{ maxWidth: "700px", margin: "0 auto", padding: "80px 24px" }}>
       <h1
         style={{
           fontSize: "28px",
@@ -26,12 +26,23 @@ export default function AboutPage() {
           fontSize: "16px",
           color: "#9ca3af",
           lineHeight: 1.8,
+          marginBottom: "20px",
+        }}
+      >
+        agentsouls.xyz is a marketplace for outcome-driven AI tools, skills, bundles,
+        and operator workflows. Built by operators, for operators. The focus is simple:
+        help traders, researchers, and builders move faster with tools that solve real jobs.
+      </p>
+      <p
+        style={{
+          fontSize: "16px",
+          color: "#9ca3af",
+          lineHeight: 1.8,
           marginBottom: "32px",
         }}
       >
-        agentsouls.xyz is a marketplace for production-ready OpenClaw skills and
-        agents. Built by operators, for operators. Every tool here has been
-        tested in real workflows, not demos.
+        That means pricing clarity, direct use cases, and products designed around execution:
+        market discovery, strategy validation, operator automation, and security hardening.
       </p>
       <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
         <Link
@@ -49,10 +60,8 @@ export default function AboutPage() {
         >
           Browse the shop
         </Link>
-        <a
-          href="https://x.com/CapitalFlow69"
-          target="_blank"
-          rel="noopener noreferrer"
+        <Link
+          href="/items/security-audit-sku"
           style={{
             display: "inline-block",
             background: "transparent",
@@ -65,8 +74,8 @@ export default function AboutPage() {
             border: "1px solid #1f1f1f",
           }}
         >
-          @CapitalFlow69 on X
-        </a>
+          View the security audit
+        </Link>
       </div>
     </div>
   );

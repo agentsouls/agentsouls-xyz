@@ -3,12 +3,12 @@ import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Sell -- agentsouls.xyz",
-  description: "List your OpenClaw skills and agents on agentsouls.xyz.",
+  description: "List your AI skill, agent, or bundle on agentsouls.xyz.",
 };
 
 export default function SellPage() {
   return (
-    <div style={{ maxWidth: "640px", margin: "0 auto", padding: "80px 24px" }}>
+    <div style={{ maxWidth: "700px", margin: "0 auto", padding: "80px 24px" }}>
       <h1
         style={{
           fontSize: "28px",
@@ -25,11 +25,22 @@ export default function SellPage() {
           fontSize: "16px",
           color: "#9ca3af",
           lineHeight: 1.8,
+          marginBottom: "20px",
+        }}
+      >
+        Built a serious AI skill, agent, bundle, or operator workflow? We are interested
+        in outcome-driven tools that save time, improve decisions, or generate real leverage.
+      </p>
+      <p
+        style={{
+          fontSize: "16px",
+          color: "#9ca3af",
+          lineHeight: 1.8,
           marginBottom: "32px",
         }}
       >
-        Want to list your OpenClaw skill or agent? Reach out on X and we will
-        review it.
+        Strong fits: trading, research, operator automation, security, and business workflows.
+        If it solves a real job and can ship cleanly, send it.
       </p>
       <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
         <a
@@ -50,7 +61,7 @@ export default function SellPage() {
           DM @CapitalFlow69
         </a>
         <Link
-          href="/"
+          href="/shop"
           style={{
             display: "inline-block",
             color: "#6b7280",
@@ -59,7 +70,7 @@ export default function SellPage() {
             padding: "10px 0",
           }}
         >
-          &larr; Back to home
+          Browse current offers
         </Link>
       </div>
     </div>

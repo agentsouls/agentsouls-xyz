@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useState } from "react";
 
 export default function BetaGate() {
@@ -52,7 +53,6 @@ export default function BetaGate() {
         padding: "40px 24px",
       }}
     >
-      {/* Badge */}
       <div
         style={{
           display: "inline-flex",
@@ -87,7 +87,6 @@ export default function BetaGate() {
         </span>
       </div>
 
-      {/* Headline */}
       <h1
         style={{
           fontSize: "clamp(28px, 5vw, 48px)",
@@ -96,11 +95,11 @@ export default function BetaGate() {
           lineHeight: 1.1,
           color: "#e5e5e5",
           textAlign: "center",
-          maxWidth: "560px",
+          maxWidth: "720px",
           marginBottom: "20px",
         }}
       >
-        Purpose-built AI agents and skills.
+        AI tools for traders, operators, and builders who want faster execution.
       </h1>
 
       <p
@@ -109,12 +108,12 @@ export default function BetaGate() {
           color: "#6b7280",
           lineHeight: 1.65,
           textAlign: "center",
-          maxWidth: "480px",
+          maxWidth: "620px",
           marginBottom: "16px",
         }}
       >
-        Skills, agents, and multi-agent teams for traders, researchers,
-        builders, and operators. Plug in and ship faster.
+        Outcome-driven skills, bundles, and operator workflows for crypto research,
+        prediction markets, strategy validation, and AI automation.
       </p>
 
       <p
@@ -122,35 +121,75 @@ export default function BetaGate() {
           fontSize: "14px",
           color: "#4b5563",
           textAlign: "center",
-          marginBottom: "48px",
+          marginBottom: "24px",
         }}
       >
-        Works with Claude Code, Cursor, Windsurf, Codex, and more.
+        Works with Claude Code, Cursor, Windsurf, Codex, OpenCode, OpenClaw, and more.
       </p>
 
-      {/* Category chips */}
+      <div
+        style={{
+          display: "flex",
+          gap: "12px",
+          flexWrap: "wrap",
+          justifyContent: "center",
+          marginBottom: "28px",
+        }}
+      >
+        <Link
+          href="/shop"
+          style={{
+            display: "inline-block",
+            background: "#e5e5e5",
+            color: "#0a0a0a",
+            textDecoration: "none",
+            padding: "12px 22px",
+            borderRadius: "8px",
+            fontSize: "14px",
+            fontWeight: 600,
+          }}
+        >
+          Browse shop
+        </Link>
+        <Link
+          href="/items/security-audit-sku"
+          style={{
+            display: "inline-block",
+            background: "transparent",
+            color: "#9ca3af",
+            textDecoration: "none",
+            padding: "12px 22px",
+            borderRadius: "8px",
+            fontSize: "14px",
+            fontWeight: 500,
+            border: "1px solid #1f1f1f",
+          }}
+        >
+          View security audit
+        </Link>
+      </div>
+
       <div
         style={{
           display: "flex",
           flexWrap: "wrap",
           justifyContent: "center",
           gap: "8px",
-          maxWidth: "560px",
-          marginBottom: "52px",
+          maxWidth: "720px",
+          marginBottom: "20px",
         }}
       >
         {[
-          "Trading",
-          "Research",
-          "Productivity",
-          "Security",
-          "Writing",
-          "Development",
-          "Prediction Markets",
-          "On-Chain",
-          "Multi-Agent",
-          "Data",
-          "+ more",
+          "polymarket scanners",
+          "strategy debug",
+          "market sentiment",
+          "funding rates",
+          "crypto bundles",
+          "security audit",
+          "prediction markets",
+          "automation",
+          "multi-agent",
+          "operator workflows",
         ].map((item) => (
           <span
             key={item}
@@ -168,7 +207,18 @@ export default function BetaGate() {
         ))}
       </div>
 
-      {/* Native signup form */}
+      <p
+        style={{
+          fontSize: "13px",
+          color: "#374151",
+          textAlign: "center",
+          maxWidth: "540px",
+          marginBottom: "48px",
+        }}
+      >
+        Start with the free tools, move into paid operator products, or book the $997 Security & Exposure Audit.
+      </p>
+
       {status === "done" ? (
         <div
           style={{
@@ -237,7 +287,7 @@ export default function BetaGate() {
               required
               value={org}
               onChange={(e) => setOrg(e.target.value)}
-              placeholder="Your company or fund"
+              placeholder="Your company, desk, or fund"
               style={{
                 width: "100%",
                 padding: "10px 12px",
@@ -278,6 +328,7 @@ export default function BetaGate() {
               <option value="Developer">Developer</option>
               <option value="Fund / Portfolio">Fund / Portfolio</option>
               <option value="Researcher">Researcher</option>
+              <option value="Operator">Operator</option>
               <option value="Other">Other</option>
             </select>
           </div>
@@ -310,7 +361,6 @@ export default function BetaGate() {
         </form>
       )}
 
-      {/* Social proof */}
       <p
         style={{
           fontSize: "13px",
@@ -319,7 +369,7 @@ export default function BetaGate() {
           textAlign: "center",
         }}
       >
-        Early access granted to traders, researchers, builders, and teams.
+        Early access granted to traders, researchers, builders, operators, and teams.
       </p>
     </div>
   );
